@@ -1,0 +1,84 @@
+# Siempre cerca · QRHistoria
+
+Un homenaje familiar: landing adaptable a celulares, álbum de fotos y videos, recuerdos de visitantes y panel privado para una única persona administradora. El contenido inicial es provisional; no contiene datos ni recuerdos inventados de la familia.
+
+## Stack
+
+Next.js / React / TypeScript / Tailwind, PostgreSQL con Prisma, Supabase Storage y Supabase Auth (correo y contraseña). No requiere Clerk. Visitantes sin cuenta.
+
+## Inicio local
+
+1. `npm install`
+2. Copiar `.env.example` a `.env` y completar las variables. Nunca subir credenciales a Git.
+3. `npm run db:generate`
+4. En una base **vacía y exclusiva para este proyecto**, ejecutar `npm run db:migrate`. Se incluye la migración inicial. No apuntar a una base compartida con otros proyectos.
+5. Ejecutar `npm run db:setup-storage` o `supabase/setup.sql` en el editor SQL de Supabase. Activa RLS, revoca acceso a las tablas desde el navegador y crea el bucket público `memorias` sin políticas de escritura pública.
+6. Crear tu usuario con correo y contraseña desde Supabase → Authentication → Users, con correo confirmado. Configurar ese correo exacto en `ADMIN_EMAIL`. Desactivar nuevos registros en Authentication. No existe pantalla pública de registro.
+7. `npm run dev`. Abrir la URL local y `/admin`.
+
+Sin configuración completa, la landing muestra una vista previa y no guarda recuerdos. Un error de conexión con configuración completa muestra un aviso temporal, sin reemplazar los datos reales por contenido de ejemplo.
+
+### Variables
+
+- `DATABASE_URL`: conexión del servidor a PostgreSQL (pooler de Supabase si corresponde).
+- `DIRECT_URL`: conexión para Prisma CLI/migraciones. Puede ser el pooler de sesión cuando la conexión directa IPv6 no esté disponible.
+- `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`: URL y clave pública anon de Supabase.
+- `SUPABASE_SERVICE_ROLE_KEY`: solo servidor; nunca usar prefijo `NEXT_PUBLIC_`.
+- `ADMIN_EMAIL`: único correo permitido para operaciones administrativas, validado en servidor contra el usuario confirmado de Supabase.
+- `SUPABASE_STORAGE_BUCKET` y `NEXT_PUBLIC_STORAGE_BUCKET`: ambos `memorias`. Si se cambia, actualizar también el SQL.
+- `RATE_LIMIT_SECRET`: secreto aleatorio largo para anonimizar la dirección de red usada en el límite de envíos.
+
+La conexión de Node a PostgreSQL verifica TLS con la CA pública de Supabase incluida en `certs/supabase-ca.crt` y exportada en `lib/supabase-ca.mjs`. No son credenciales privadas. Para estas conexiones, conservar las URLs del ejemplo sin parámetros `sslmode`/`sslrootcert` que sobreescriban la configuración TLS explícita del adaptador.
+
+## Administrar
+
+En `/admin`:
+
+- **La página**: nombre/título, bienvenida, historia, frase y selección de portada entre las fotografías publicadas.
+- **Álbum**: JPG/PNG/WebP, recorte arrastrando y zoom, proporciones 4:3, 3:4, 1:1 y 16:9; compresión y vista previa antes de subir. Título, época y descripción. Borradores, publicación individual, flechas para ordenar y eliminación con confirmación.
+- **Recuerdos**: nombre libre de persona o familia, revisión y aprobación antes de publicar; ocultar o eliminar mensajes.
+
+Se conserva únicamente el archivo procesado en Storage; guarda los originales en un respaldo familiar separado. Los archivos con URL pública, incluso en borrador, son accesibles si alguien conoce esa URL. No es un sistema para contenido confidencial. `noindex` pide a buscadores no indexar, pero no restringe el acceso.
+
+## Peso y consumo
+
+- Fotos: procesamiento local en Canvas → WebP, lado mayor de hasta 1600 px, calidad 0.8 (0.65 si supera 650 KB), máximo final 2 MB. 650 KB es un umbral para reducir calidad, no una garantía. El recorte se guarda en el archivo; cambiarlo después requiere subir de nuevo desde el original.
+- Video: MP4 de hasta 25 MB. **No hay transcodificación automática en el MVP.** Preparar en HandBrake con H.264, 720p, AAC, opción Web Optimized; ajustar calidad para llegar al peso deseado. Mantener el original fuera de Supabase. La extensión MP4 no garantiza códecs compatibles: revisar reproducción en móvil antes de publicar.
+- Los videos se solicitan al abrir su visor, con controles y sin autoplay. Las fotos del álbum usan carga diferida.
+- El panel suma los bytes de archivos registrados. No es un medidor de cuota de Supabase y no incluye archivos huérfanos ni tráfico. Revisar Storage y egress en el dashboard de Supabase: el tráfico de muchas reproducciones también consume cuota.
+- La base guarda textos y referencias. Fotos y videos consumen Storage, no se almacenan como binarios en PostgreSQL. No se usan transformaciones de imágenes del servidor de Supabase.
+
+## Protección y límites del MVP
+
+- Rutas de administración verifican el token con Supabase y comparan el correo del usuario; ocultar botones no concede permisos.
+- Mutaciones requieren mismo origen. Validación de campos, trampa antispam y moderación previa para recuerdos. Límite básico: cinco envíos por dirección de red por hora. Configurar el hosting para que sanee `X-Forwarded-For`; con un proxy no confiable este límite puede evadirse. Para exposición amplia, añadir Turnstile y un límite atómico en el borde antes de difundir.
+- No hay subida pública de archivos, para mantener control de cuota.
+- El panel carga hasta 500 recuerdos; la landing muestra los 200 aprobados más recientes. Añadir paginación si el homenaje crece.
+- La subida de Storage y el registro en PostgreSQL no forman una transacción. Si falla el registro después de subir, el panel informa la ruta huérfana para retirarla en Storage. Si falla la eliminación física, informa que hay que completar la limpieza allí.
+- No incluye recuperación de contraseña en la interfaz; el usuario administrador se gestiona desde Supabase.
+- Las credenciales reales se mantienen exclusivamente en `.env` ignorado por Git y en las variables del hosting; `.env.example` solo contiene ejemplos.
+
+## Tema y animaciones
+
+El botón de sol/luna permite elegir modo claro u oscuro en la landing y en el panel. La preferencia queda guardada únicamente en el navegador; sin elección previa se toma el tema del sistema. El tema se aplica antes del primer render para evitar un destello claro. Las secciones aparecen suavemente al desplazarse y los botones y fotografías responden al cursor. `prefers-reduced-motion` desactiva estos movimientos. Sin JavaScript, el contenido sigue visible.
+
+## Deploy en Vercel
+
+1. Importar `luciano-raw/qrhistoria`, preset **Next.js**, carpeta raíz del repositorio.
+2. Se fija Node **22.x** en `package.json`. Build: `npm run build`. Instalación: `npm ci`.
+3. Copiar a Vercel las variables de `.env.example` con los valores reales de `.env`. **GitHub no envía `.env` a Vercel**. Solo URL, clave anon y nombre de bucket llevan prefijo público; la clave service_role, las URLs de PostgreSQL y el secreto antispam son privados.
+4. El build no modifica la base. Aplicar `npm run db:migrate` y `npm run db:setup-storage` desde un equipo autorizado antes de publicar cambios de esquema.
+5. Crear el usuario administrador en Supabase Authentication con el correo configurado y correo confirmado. Desactivar nuevos registros. Configurar Site URL en Supabase con la URL definitiva del homenaje.
+6. Comprobar login, fotos, videos y envío/aprobación de recuerdos antes de imprimir el QR.
+
+La aplicación permanece en vista previa hasta completar también las claves de Supabase. Agregar variables después de un deploy requiere volver a desplegar, especialmente las variables `NEXT_PUBLIC_*` que se incluyen en el build.
+
+Referencias: [Node en Vercel](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions) y [conexiones de Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres).
+
+## Publicación y QR
+
+Conectar el repositorio al hosting de Next.js que elijas y configurar las mismas variables. Las migraciones requieren la conexión de base adecuada. Probar entrada de admin, subida, reproducción, moderación y visibilidad pública antes de compartir. Elegir una URL estable antes de imprimir el QR; después se puede renovar el contenido sin cambiar el código impreso. El generador de QR queda pendiente hasta tener esa URL definitiva.
+
+## Comprobaciones
+
+`npm run typecheck`, `npm test` y `npm run build` (Node 22.12 o posterior). El proxy del hosting debe preservar el encabezado Host público. Las operaciones con Supabase necesitan un proyecto configurado para verificación de extremo a extremo.
