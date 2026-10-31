@@ -7,7 +7,7 @@ const globalDb = globalThis as unknown as { db?: PrismaClient };
 export const configured = () => Boolean(process.env.DATABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.ADMIN_EMAIL && process.env.RATE_LIMIT_SECRET);
 export function db() {
   if (!process.env.DATABASE_URL) throw new Error('Base de datos sin configurar');
-  return globalDb.db ??= new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 15000, idleTimeoutMillis: 20000, ssl: { ca: supabaseCA, rejectUnauthorized: true } }) });
+  return globalDb.db ??= new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 15000, idleTimeoutMillis: 20000, ssl: { ca: supabaseCA, rejectUnauthorized: true } }), transactionOptions: { maxWait: 15000, timeout: 10000 } });
 }
 export function storage() { return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false, autoRefreshToken: false } }); }
 export async function isAdmin(request: Request) {

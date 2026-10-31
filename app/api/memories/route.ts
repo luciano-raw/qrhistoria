@@ -1,21 +1,36 @@
-import { createHmac } from 'node:crypto';
-import { z } from 'zod';
-import { configured, db, sameOrigin } from '@/lib/server';
-const schema = z.object({ name: z.string().trim().min(2).max(80), message: z.string().trim().min(10).max(2000), website: z.string().max(0) });
+import { createHmac, randomUUID } from 'node:crypto';
+import { bucket, configured, db, sameOrigin, storage } from '@/lib/server';
+import { parseMemorySubmission, reserveMemorySubmission, SubmissionError } from '@/lib/memory-input';
+export const runtime = 'nodejs';
+export const maxDuration = 30;
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: 'Solicitud no permitida.' }, { status: 403 });
   if (!configured()) return Response.json({ error: 'Los recuerdos estarán disponibles cuando la familia termine la configuración.' }, { status: 503 });
-  if (Number(request.headers.get('content-length') || 0) > 12000) return Response.json({ error: 'Mensaje demasiado largo.' }, { status: 413 });
+  let reserved = 0; let saved = false; const uploaded: string[] = [];
   try {
-    const raw = await request.text();
-    if (raw.length > 12000) return Response.json({ error: 'Mensaje demasiado largo.' }, { status: 413 });
-    const input = schema.safeParse(JSON.parse(raw));
-    if (!input.success) return Response.json({ error: 'Escribe tu nombre (2–80 caracteres) y un recuerdo de 10–2000 caracteres.' }, { status: 400 });
+    const input = await parseMemorySubmission(request);
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     const fingerprint = createHmac('sha256', process.env.RATE_LIMIT_SECRET!).update(ip).digest('hex');
-    const count = await db().memory.count({ where: { fingerprint, createdAt: { gte: new Date(Date.now() - 3600000) } } });
-    if (count >= 5) return Response.json({ error: 'Ya recibimos varios recuerdos tuyos. Inténtalo dentro de una hora.' }, { status: 429 });
-    await db().memory.create({ data: { name: input.data.name, message: input.data.message, fingerprint } });
-    return Response.json({ ok: true }, { status: 201 });
-  } catch { return Response.json({ error: 'No pudimos guardar el recuerdo. Inténtalo más tarde.' }, { status: 500 }); }
+    const total = input.photos.reduce((sum, photo) => sum + photo.length, 0);
+    const budget = Math.floor(Math.min(500, Math.max(1, Number(process.env.MEMORY_PHOTO_BUDGET_MB) || 150))) * 1024 * 1024;
+    await reserveMemorySubmission(db(), fingerprint, total, budget);
+    reserved = total;
+    const photos: { path: string; bytes: number; position: number }[] = [];
+    for (const [position, photo] of input.photos.entries()) {
+      const path = `recuerdos/${randomUUID()}.webp`;
+      const { error } = await storage().storage.from(bucket()).upload(path, photo, { contentType: 'image/webp', cacheControl: '31536000', upsert: false });
+      if (error) throw new Error('No se pudo subir una fotografía');
+      uploaded.push(path); photos.push({ path, bytes: photo.length, position });
+    }
+    const memory = await db().memory.create({ data: { name: input.name, message: input.message, fingerprint, approved: true, photos: { create: photos } }, select: { id: true, name: true, message: true, approved: true, createdAt: true, photos: { select: { path: true, bytes: true }, orderBy: { position: 'asc' } } } });
+    saved = true;
+    return Response.json({ memory }, { status: 201 });
+  } catch (error) {
+    if (!saved && reserved) {
+      let clean = !uploaded.length;
+      if (uploaded.length) { try { const { error: cleanupError } = await storage().storage.from(bucket()).remove(uploaded); clean = !cleanupError; } catch { clean = false; } }
+      if (clean) await db().uploadBudget.updateMany({ where: { id: 'memories', usedBytes: { gte: reserved } }, data: { usedBytes: { decrement: reserved } } }).catch(() => {});
+    }
+    return Response.json({ error: error instanceof SubmissionError ? error.message : 'No pudimos guardar el recuerdo. Inténtalo más tarde.' }, { status: error instanceof SubmissionError ? error.status : 500 });
+  }
 }

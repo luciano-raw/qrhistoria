@@ -34,15 +34,18 @@ La conexión de Node a PostgreSQL verifica TLS con la CA pública de Supabase in
 
 En `/admin`:
 
-- **La página**: nombre/título, bienvenida, historia, frase y selección de portada entre las fotografías publicadas.
+- **La página**: nombre/título, bienvenida, historia, frase y fotografía de portada, con subida, recorte o selección desde la biblioteca.
+- **Editar en la web**: la misma landing con textos seleccionables. Haz clic sobre un texto, edítalo y confirma para guardarlo. Incluye encabezados, bajadas, firmas y textos del álbum. Haz clic sobre una foto para reemplazarla o volver a recortarla. La portada usa un marco 4:5 y el álbum 4:3; también se puede añadir una foto nueva desde esta vista. Los recuerdos de visitantes se moderan en su pestaña, sin editar sus palabras.
 - **Álbum**: JPG/PNG/WebP, recorte arrastrando y zoom, proporciones 4:3, 3:4, 1:1 y 16:9; compresión y vista previa antes de subir. Título, época y descripción. Borradores, publicación individual, flechas para ordenar y eliminación con confirmación.
-- **Recuerdos**: nombre libre de persona o familia, revisión y aprobación antes de publicar; ocultar o eliminar mensajes.
+- **Recuerdos**: nombre libre de persona o familia, mensaje y hasta tres fotografías opcionales. Los nuevos recuerdos aparecen inmediatamente. Desde el panel puedes ocultarlos, volver a mostrarlos o eliminarlos con sus fotos. Los recuerdos antiguos que estaban pendientes conservan su estado oculto.
 
 Se conserva únicamente el archivo procesado en Storage; guarda los originales en un respaldo familiar separado. Los archivos con URL pública, incluso en borrador, son accesibles si alguien conoce esa URL. No es un sistema para contenido confidencial. `noindex` pide a buscadores no indexar, pero no restringe el acceso.
 
 ## Peso y consumo
 
-- Fotos: procesamiento local en Canvas → WebP, lado mayor de hasta 1600 px, calidad 0.8 (0.65 si supera 650 KB), máximo final 2 MB. 650 KB es un umbral para reducir calidad, no una garantía. El recorte se guarda en el archivo; cambiarlo después requiere subir de nuevo desde el original.
+- Fotos del administrador: modal de encuadre con desplazamiento, zoom y vista previa del recorte final. Canvas → WebP, lado mayor de hasta 1600 px, calidad 0.8, con reducción adicional si hace falta, máximo final 2 MB. Se puede volver a recortar el archivo almacenado; para recuperar zonas que ya fueron descartadas hay que seleccionar el original. Las fotos del álbum se muestran completas dentro del marco; la portada tiene proporción 4:5 consistente en móvil y escritorio.
+- Fotos de visitantes: hasta tres por recuerdo, cada una preparada en el mismo modal, WebP de hasta 1200 px y máximo 500 KB. El servidor valida el contenido real con Sharp, vuelve a comprimir y elimina metadatos. No se aceptan videos de visitantes.
+- `MEMORY_PHOTO_BUDGET_MB`: presupuesto para fotos de recuerdos, 150 MB por defecto, configurable entre 1 y 500 MB. Se reserva atómicamente antes de subir; al agotarse se siguen aceptando mensajes sin fotos. El presupuesto cubre las fotos de recuerdos, no reemplaza las cuotas totales de Supabase ni el seguimiento de tráfico.
 - Video: MP4 de hasta 25 MB. **No hay transcodificación automática en el MVP.** Preparar en HandBrake con H.264, 720p, AAC, opción Web Optimized; ajustar calidad para llegar al peso deseado. Mantener el original fuera de Supabase. La extensión MP4 no garantiza códecs compatibles: revisar reproducción en móvil antes de publicar.
 - Los videos se solicitan al abrir su visor, con controles y sin autoplay. Las fotos del álbum usan carga diferida.
 - El panel suma los bytes de archivos registrados. No es un medidor de cuota de Supabase y no incluye archivos huérfanos ni tráfico. Revisar Storage y egress en el dashboard de Supabase: el tráfico de muchas reproducciones también consume cuota.
@@ -51,10 +54,10 @@ Se conserva únicamente el archivo procesado en Storage; guarda los originales e
 ## Protección y límites del MVP
 
 - Rutas de administración verifican el token con Supabase y comparan el correo del usuario; ocultar botones no concede permisos.
-- Mutaciones requieren mismo origen. Validación de campos, trampa antispam y moderación previa para recuerdos. Límite básico: cinco envíos por dirección de red por hora. Configurar el hosting para que sanee `X-Forwarded-For`; con un proxy no confiable este límite puede evadirse. Para exposición amplia, añadir Turnstile y un límite atómico en el borde antes de difundir.
-- No hay subida pública de archivos, para mantener control de cuota.
-- El panel carga hasta 500 recuerdos; la landing muestra los 200 aprobados más recientes. Añadir paginación si el homenaje crece.
-- La subida de Storage y el registro en PostgreSQL no forman una transacción. Si falla el registro después de subir, el panel informa la ruta huérfana para retirarla en Storage. Si falla la eliminación física, informa que hay que completar la limpieza allí.
+- Mutaciones requieren mismo origen. Validación de campos, trampa antispam y cinco intentos válidos por dirección de red por hora, con contador atómico. Configurar el hosting para que sanee `X-Forwarded-For`; con un proxy no confiable este límite puede evadirse. Para exposición amplia puede añadirse Turnstile.
+- Los visitantes suben únicamente las fotografías comprimidas junto con el formulario; no reciben acceso directo de escritura a Storage. Se limita el cuerpo completo incluso sin `Content-Length`, el número de fotos, los bytes y los píxeles decodificados.
+- El panel carga hasta 500 recuerdos; la landing muestra los 200 visibles más recientes. Añadir paginación si el homenaje crece. Ocultar quita el recuerdo de la página, pero no revoca URLs públicas que alguien ya conozca.
+- La subida de Storage y el registro en PostgreSQL no forman una transacción. Se intenta retirar archivos cuando falla el registro; si la limpieza falla, se conserva la reserva de espacio. El panel informa si una eliminación física necesita completarse en Storage.
 - No incluye recuperación de contraseña en la interfaz; el usuario administrador se gestiona desde Supabase.
 - Las credenciales reales se mantienen exclusivamente en `.env` ignorado por Git y en las variables del hosting; `.env.example` solo contiene ejemplos.
 
@@ -69,7 +72,7 @@ El botón de sol/luna permite elegir modo claro u oscuro en la landing y en el p
 3. Copiar a Vercel las variables de `.env.example` con los valores reales de `.env`. **GitHub no envía `.env` a Vercel**. Solo URL, clave anon y nombre de bucket llevan prefijo público; la clave service_role, las URLs de PostgreSQL y el secreto antispam son privados.
 4. El build no modifica la base. Aplicar `npm run db:migrate` y `npm run db:setup-storage` desde un equipo autorizado antes de publicar cambios de esquema.
 5. Crear el usuario administrador en Supabase Authentication con el correo configurado y correo confirmado. Desactivar nuevos registros. Configurar Site URL en Supabase con la URL definitiva del homenaje.
-6. Comprobar login, fotos, videos y envío/aprobación de recuerdos antes de imprimir el QR.
+6. Comprobar login, edición visual, fotos, videos y envío/ocultamiento de recuerdos antes de imprimir el QR.
 
 La aplicación permanece en vista previa hasta completar también las claves de Supabase. Agregar variables después de un deploy requiere volver a desplegar, especialmente las variables `NEXT_PUBLIC_*` que se incluyen en el build.
 
@@ -82,3 +85,5 @@ Conectar el repositorio al hosting de Next.js que elijas y configurar las mismas
 ## Comprobaciones
 
 `npm run typecheck`, `npm test` y `npm run build` (Node 22.12 o posterior). El proxy del hosting debe preservar el encabezado Host público. Las operaciones con Supabase necesitan un proyecto configurado para verificación de extremo a extremo.
+
+`node --experimental-strip-types scripts/check-memory-limits.mjs` verifica en PostgreSQL el alta con fotos y ocultamiento dentro de una transacción que se revierte, la concurrencia del límite y el rechazo por presupuesto. Solo crea contadores de prueba con identificadores aleatorios y los limpia; no publica recuerdos ni sube archivos.

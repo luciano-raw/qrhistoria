@@ -11,6 +11,7 @@ model Profile {
   introduction String @default("Aquí iremos reuniendo su historia: los días compartidos, las pequeñas costumbres y todo ese cariño que sigue encontrando nuevas formas de acompañarnos.")
   quote String @default("Lo que se comparte con amor se queda con nosotros.")
   heroPath String?
+  content Json @default("{}")
 }
 model Media {
   id String @id @default(cuid())
@@ -22,15 +23,35 @@ model Media {
   bytes Int
   position Int @default(0)
   published Boolean @default(false)
+  placement String @default("album")
   createdAt DateTime @default(now())
 }
 model Memory {
   id String @id @default(cuid())
   name String
   message String
-  approved Boolean @default(false)
+  approved Boolean @default(true)
   fingerprint String
   createdAt DateTime @default(now())
+  photos MemoryPhoto[]
   @@index([approved, createdAt])
   @@index([fingerprint, createdAt])
+}
+model MemoryPhoto {
+  id String @id @default(cuid())
+  memoryId String
+  memory Memory @relation(fields: [memoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  path String @unique
+  bytes Int
+  position Int @default(0)
+  @@index([memoryId])
+}
+model SubmissionLimit {
+  fingerprint String @id
+  count Int @default(0)
+  windowStart DateTime @default(now())
+}
+model UploadBudget {
+  id String @id @default("memories")
+  usedBytes Int @default(0)
 }
