@@ -8,6 +8,11 @@ export const pageCopy = {
   memoriesEmpty: 'Una anécdota, una enseñanza, una tarde cualquiera.', memoriesEmptyNote: 'El primer recuerdo puede ser el tuyo.',
   shareLabel: 'UNAS PALABRAS QUE SE QUEDAN', shareTitle: '¿Qué recuerdo', shareEmphasis: 'guardas con él?', shareDescription: 'No hace falta escribir algo perfecto.\nSolo algo que nazca del cariño.',
   footer: 'Lo vivido juntos siempre encuentra cómo quedarse.',
+  heroPhoto2: 'De esos días que siempre queremos volver a mirar.', heroPhoto3: 'Las pequeñas cosas también cuentan una gran historia.',
+  storyPhoto1: 'Un comienzo, muchos caminos compartidos.', storyPhoto2: 'Esos momentos que se vuelven parte de nosotros.', storyPhoto3: 'Todo el cariño que cabe en una fotografía.',
+  albumPhoto: 'Hay instantes que se quedan para siempre.', quotePhoto: 'A veces una imagen dice lo que las palabras no alcanzan.',
+  memoriesPhoto: 'Cada persona guarda un pedacito de esta historia.', closingPhoto: 'Seguimos encontrándonos en todo lo que compartimos.',
+  galleryTitle: 'Momentos para volver.', galleryDescription: 'Todas nuestras fotografías, en un lugar para recorrer con calma.',
 };
 export type CopyKey = keyof typeof pageCopy;
 export type EditableTarget = { type: 'profile'; key: 'name' | 'subtitle' | 'introduction' | 'quote' } | { type: 'copy'; key: CopyKey } | { type: 'media'; id: string; key: 'title' | 'caption' | 'year' };

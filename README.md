@@ -35,13 +35,29 @@ La conexión de Node a PostgreSQL verifica TLS con la CA pública de Supabase in
 En `/admin`:
 
 - **La página**: nombre/título, bienvenida, historia, frase y fotografía de portada, con subida, recorte o selección desde la biblioteca.
+- **Fotografías de la historia**, dentro de «La página»: dos fotos acompañantes de la portada (tres en total con la principal), tres fotos en «Su historia» y una foto con frase en Momentos, Su frase, Recuerdos y Cierre. Puedes cambiar, acomodar o retirar cada foto y guardar su frase. Los espacios vacíos se muestran únicamente al administrador, sin dejar bloques incompletos al público.
 - **Editar en la web**: la misma landing con textos seleccionables. Haz clic sobre un texto, edítalo y confirma para guardarlo. Incluye encabezados, bajadas, firmas y textos del álbum. Haz clic sobre una foto para reemplazarla o volver a recortarla. La portada usa un marco 4:5 y el álbum 4:3; también se puede añadir una foto nueva desde esta vista. Los recuerdos de visitantes se moderan en su pestaña, sin editar sus palabras.
 - **Álbum**: JPG/PNG/WebP, recorte arrastrando y zoom, proporciones 4:3, 3:4, 1:1 y 16:9; compresión y vista previa antes de subir. Título, época y descripción. Borradores, publicación individual, flechas para ordenar y eliminación con confirmación.
+- **Galería**: carga de varias fotos, hasta 30 por tanda y originales de hasta 80 MB por archivo. Se comprimen una a una a WebP buscando 200 KB, con hasta 1920 px en el lado mayor. Por defecto se conserva la foto completa; «Acomodar foto» abre el modal si quieres cambiar el encuadre. Puedes editar títulos, frases, orden y visibilidad. Estas fotos exclusivas no alargan el home.
 - **Recuerdos**: nombre libre de persona o familia, mensaje y hasta tres fotografías opcionales. Los nuevos recuerdos aparecen inmediatamente. Desde el panel puedes ocultarlos, volver a mostrarlos o eliminarlos con sus fotos. Los recuerdos antiguos que estaban pendientes conservan su estado oculto.
 
 Se conserva únicamente el archivo procesado en Storage; guarda los originales en un respaldo familiar separado. Los archivos con URL pública, incluso en borrador, son accesibles si alguien conoce esa URL. No es un sistema para contenido confidencial. `noindex` pide a buscadores no indexar, pero no restringe el acceso.
 
 La portada, las fotos del álbum y las fotos de recuerdos abren un visor de pantalla completa al tocarlas. Muestra la fotografía guardada sin recortes adicionales, con una X de 48 px siempre visible; también se cierra con Escape y restaura el foco sin desplazar la página. El visor usa el archivo optimizado, no una copia original sin comprimir.
+
+## Galería y presentación
+
+- `/` es el recorrido de la historia. Los mensajes de visitantes, con nombre, texto y fotos, aparecen en «Cada recuerdo, una forma de abrazar», antes del formulario «¿Qué recuerdo guardas con él?» (los títulos son editables).
+- `/galeria` es la galería independiente. Reúne todas las fotografías publicadas del home, las fotos exclusivas de la galería y las fotos de recuerdos visibles. No copia los archivos ni hereda el límite de 200 recuerdos del home. Solo aparecen fotografías; los videos se siguen reproduciendo desde el álbum del home.
+- Los filtros «Todas», «Familia» y «Recuerdos compartidos» permiten elegir la colección; también hay búsqueda por título, frase o nombre. Para una ceremonia puedes seleccionar «Familia» si quieres presentar únicamente las fotos que tú publicaste.
+- Tocar una miniatura abre su visor en pausa, con anterior/siguiente y gesto horizontal en celular. «Iniciar presentación» comienza el bucle automático y solicita pantalla completa si el navegador la admite. No hay reproducción automática al entrar ni música automática.
+- Velocidad de 3–30 segundos por foto, guardada en el dispositivo. Pausa conserva la foto; detener, la X o Escape vuelven a la galería. Con el foco fuera de los controles se pueden usar las flechas para avanzar/retroceder y Espacio para pausar/reanudar.
+- El display alterna composiciones, fundidos y movimiento lento sin recortar la fotografía. Respeta `prefers-reduced-motion`. Los controles se ocultan al dejar de usarlos y reaparecen al mover el puntero, tocar o enfocarlos con el teclado; la X queda siempre visible.
+- Solo se precargan las próximas dos fotos. Se pausa el avance al ocultar la pestaña y se intenta mantener encendida la pantalla durante la reproducción cuando el navegador ofrece Screen Wake Lock. Las funciones opcionales fallan de forma controlada.
+- Al ocultar un recuerdo, sus imágenes salen también de la galería y la presentación. Las galerías abiertas actualizan su colección cada 30 segundos mientras estén visibles; un fallo de red conserva la última colección cargada.
+- Para HDMI desde PC: conecta la pantalla, duplica o extiende el escritorio y abre la galería en esa pantalla; inicia la presentación y ajusta la velocidad. Desde un celular: puedes reproducir en horizontal o usar la función de duplicar pantalla del dispositivo. No se implementa un emisor propio de Chromecast/AirPlay; la conexión depende del equipo y del sistema operativo.
+
+Los espacios usan el campo `Media.placement` ya existente, con reemplazo transaccional y limpieza del archivo anterior. Esta ampliación no necesita una migración de la base de datos ni variables nuevas en Vercel.
 
 ## Peso y consumo
 
@@ -90,3 +106,5 @@ Conectar el repositorio al hosting de Next.js que elijas y configurar las mismas
 `npm run typecheck`, `npm test` y `npm run build` (Node 22.12 o posterior). El proxy del hosting debe preservar el encabezado Host público. Las operaciones con Supabase necesitan un proyecto configurado para verificación de extremo a extremo.
 
 `node --experimental-strip-types scripts/check-memory-limits.mjs` verifica en PostgreSQL el alta con fotos y ocultamiento dentro de una transacción que se revierte, la concurrencia del límite y el rechazo por presupuesto. Solo crea contadores de prueba con identificadores aleatorios y los limpia; no publica recuerdos ni sube archivos.
+
+`node scripts/check-photo-slots.mjs` comprueba los bloqueos transaccionales para espacios de fotos, su asignación a secciones y las frases; todos sus cambios se revierten. Las pruebas de galería cubren visibilidad, moderación, duplicados y repetición continua del índice de presentación.

@@ -1,7 +1,8 @@
 'use client';
 import { useRef, useState } from 'react';
 import { ArrowLeft, ImagePlus, Pencil } from 'lucide-react';
-import { EditableTarget } from '@/lib/copy';
+import { EditableTarget, pageCopy } from '@/lib/copy';
+import { isSectionSlot, sectionSlots } from '@/lib/sections';
 import { AdminAPI, saveAdminImage } from '@/lib/admin-upload';
 import { Media, Memory, Profile, mediaUrl } from '@/lib/shared';
 import Memorial from './memorial';
@@ -11,11 +12,15 @@ import ImageCropModal from './image-crop-modal';
 export function PhotoEditor({ target, profile, media, api, onSaved, onClose }: { target: string; profile: Profile; media: Media[]; api: AdminAPI; onSaved: (notice?: string) => Promise<void>; onClose: () => void }) {
   const picker = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | undefined>(); const [source, setSource] = useState(''); const [error, setError] = useState('');
-  const current = target === 'hero' ? profile.heroPath : media.find(item => item.id === target)?.path;
-  if (file || source) return <ImageCropModal file={file} initialUrl={source || undefined} aspect={target === 'hero' ? 4 / 5 : 4 / 3} onClose={onClose} onSave={async blob => { const result = await saveAdminImage(api, blob, target); await onSaved(result.warning || 'Fotografía guardada.'); onClose(); }} />;
-  return <Modal title={target === 'hero' ? 'Fotografía de portada' : target === 'new' ? 'Añadir una fotografía' : 'Editar fotografía'} onClose={onClose} wide>
+  const slot = target.startsWith('slot:') ? target.slice(5) : '';
+  const item = slot ? media.find(item => item.placement === slot) : media.find(item => item.id === target);
+  const current = target === 'hero' ? profile.heroPath : item?.path;
+  const gallery = item?.placement === 'gallery';
+  const caption = item?.caption ?? (isSectionSlot(slot) ? profile.content?.[sectionSlots[slot].captionKey] ?? pageCopy[sectionSlots[slot].captionKey] : '');
+  if (file || source) return <ImageCropModal file={file} initialUrl={source || undefined} aspect={target === 'hero' ? 4 / 5 : gallery ? undefined : 4 / 3} preserveOriginal={gallery} onClose={onClose} onSave={async blob => { const result = await saveAdminImage(api, blob, target, { title: item?.title, caption }); await onSaved(result.warning || 'Fotografía guardada.'); onClose(); }} />;
+  return <Modal title={target === 'hero' ? 'Fotografía de portada' : isSectionSlot(slot) ? sectionSlots[slot].label : target === 'new' ? 'Añadir una fotografía' : 'Editar fotografía'} onClose={onClose} wide>
     <p className="modal-description">Elige una foto. Antes de guardarla podrás ajustar el encuadre y comprobar cómo quedará.</p>
-    <input ref={picker} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Elegir fotografía" onChange={e => { const value = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (!value) return; if (!['image/jpeg', 'image/png', 'image/webp'].includes(value.type) || value.size > 40 * 1024 * 1024) { setError('Elige un JPG, PNG o WebP de menos de 40 MB.'); return; } setFile(value); }} />
+    <input ref={picker} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Elegir fotografía" onChange={e => { const value = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (!value) return; if (!['image/jpeg', 'image/png', 'image/webp'].includes(value.type) || value.size > 80 * 1024 * 1024) { setError('Elige un JPG, PNG o WebP de hasta 80 MB.'); return; } setFile(value); }} />
     <div className="photo-picker-actions"><button type="button" className="button" onClick={() => picker.current?.click()}><ImagePlus size={17} /> Subir otra fotografía</button>{current && <button type="button" className="secondary" onClick={() => setSource(mediaUrl(current))}><Pencil size={15} /> Ajustar la foto actual</button>}</div>
     {!!media.filter(item => item.kind === 'image').length && <><h3 className="library-heading">O elige una foto de tu biblioteca</h3><div className="photo-library">{media.filter(item => item.kind === 'image').map(item => <button type="button" key={item.id} onClick={() => setSource(mediaUrl(item.path))}><img src={mediaUrl(item.path)} alt={item.title} loading="lazy" /><span>{item.title}</span></button>)}</div></>}
     <p role="alert" className="error">{error}</p>

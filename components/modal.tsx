@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
-export default function Modal({ title, onClose, busy = false, children, wide = false, fullscreen = false }: { title: string; onClose: () => void; busy?: boolean; children: React.ReactNode; wide?: boolean; fullscreen?: boolean }) {
+export default function Modal({ title, onClose, busy = false, children, wide = false, fullscreen = false, className = '' }: { title: string; onClose: () => void; busy?: boolean; children: React.ReactNode; wide?: boolean; fullscreen?: boolean; className?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -11,5 +11,5 @@ export default function Modal({ title, onClose, busy = false, children, wide = f
     dialog.current?.showModal();
     return () => { document.body.style.overflow = overflow; before?.focus({ preventScroll: true }); };
   }, []);
-  return <dialog ref={dialog} aria-labelledby={titleId} className={`editor-modal ${wide ? 'wide' : ''} ${fullscreen ? 'fullscreen-viewer' : ''}`} onCancel={e => { e.preventDefault(); if (!busy) onClose(); }}><header><h2 id={titleId}>{title}</h2><button type="button" className="icon-button" aria-label={fullscreen ? 'Cerrar y volver a la página' : 'Cerrar ventana'} onClick={onClose} disabled={busy}><X size={fullscreen ? 26 : 19} /></button></header>{children}</dialog>;
+  return <dialog ref={dialog} aria-labelledby={titleId} className={`editor-modal ${wide ? 'wide' : ''} ${fullscreen ? 'fullscreen-viewer' : ''} ${className}`} onCancel={e => { e.preventDefault(); if (!busy) onClose(); }}><header><h2 id={titleId}>{title}</h2><button type="button" className="icon-button" aria-label={fullscreen ? 'Cerrar y volver a la página' : 'Cerrar ventana'} onClick={onClose} disabled={busy}><X size={fullscreen ? 26 : 19} /></button></header>{children}</dialog>;
 }

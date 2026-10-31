@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { bucket, db, isAdmin, sameOrigin, storage } from '@/lib/server';
+import { mediaPlacements } from '@/lib/sections';
 const profileSchema = z.object({ name: z.string().trim().min(1).max(120), subtitle: z.string().max(300), introduction: z.string().max(6000), quote: z.string().max(600), heroPath: z.string().nullable(), content: z.record(z.string().max(80), z.string().max(3000)).refine(value => Object.keys(value).length <= 60).optional() });
 async function retireHero(path: string | null | undefined) {
   if (!path) return;
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
       if (error) throw error;
       return Response.json({ path, token: signed.token });
     } else if (data.action === 'createMedia') {
-      const value = z.object({ title: z.string().trim().min(1).max(150), caption: z.string().max(2000), year: z.string().max(40), kind: z.enum(['image', 'video']), path: z.string().regex(/^[a-f0-9-]{36}\.(webp|mp4)$/), published: z.boolean().optional(), asHero: z.boolean().optional() }).parse(data.value);
+      const value = z.object({ title: z.string().trim().min(1).max(150), caption: z.string().max(2000), year: z.string().max(40), kind: z.enum(['image', 'video']), path: z.string().regex(/^[a-f0-9-]{36}\.(webp|mp4)$/), published: z.boolean().optional(), asHero: z.boolean().optional(), placement: z.enum(mediaPlacements).optional() }).parse(data.value);
       if (!value.path.endsWith(value.kind === 'image' ? '.webp' : '.mp4')) throw new Error('Formato incorrecto.');
       const { data: info, error } = await storage().storage.from(bucket()).info(value.path);
       if (error || !info) throw new Error('No encontramos el archivo subido.');
@@ -60,11 +61,24 @@ export async function POST(request: Request) {
       const last = await db().media.aggregate({ _max: { position: true } });
       if (value.asHero && value.kind !== 'image') throw new Error('La portada requiere una foto.');
       const oldHero = value.asHero ? await db().profile.findUnique({ where: { id: 'main' } }) : null;
-      const { asHero, ...fields } = value;
+      const { asHero, placement, ...fields } = value;
+      const destination = asHero ? 'hero' : placement || 'album';
+      const single = destination !== 'album' && destination !== 'gallery';
+      if (destination !== 'album' && value.kind !== 'image') throw new Error('Este espacio requiere una fotografía.');
+      let obsolete: { id: string; path: string }[] = [];
       await db().$transaction(async tx => {
-        await tx.media.create({ data: { ...fields, bytes, published: asHero ? true : !!value.published, placement: asHero ? 'hero' : 'album', position: (last._max.position ?? -1) + 1 } });
+        if (single) {
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`photo-slot:${destination}`}))::text AS locked`;
+          obsolete = await tx.media.findMany({ where: { placement: destination }, select: { id: true, path: true } });
+        }
+        await tx.media.create({ data: { ...fields, bytes, published: single ? true : !!value.published, placement: destination, position: (last._max.position ?? -1) + 1 } });
         if (asHero) await tx.profile.upsert({ where: { id: 'main' }, create: { id: 'main', heroPath: value.path }, update: { heroPath: value.path } });
+        if (obsolete.length) {
+          await tx.profile.updateMany({ where: { heroPath: { in: obsolete.map(item => item.path) } }, data: { heroPath: value.path } });
+          await tx.media.deleteMany({ where: { id: { in: obsolete.map(item => item.id) } } });
+        }
       });
+      if (obsolete.length) { const { error } = await storage().storage.from(bucket()).remove(obsolete.map(item => item.path)); if (error) return Response.json({ ok: true, warning: 'La fotografía se guardó. Revisa la limpieza de los archivos anteriores en Storage.' }); }
       const warning = await retireHero(oldHero?.heroPath); if (warning) return Response.json({ ok: true, warning });
     } else if (data.action === 'replaceMedia') {
       const value = z.object({ id: z.string(), path: z.string().regex(/^[a-f0-9-]{36}\.webp$/) }).parse(data.value);
