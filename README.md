@@ -41,6 +41,8 @@ En `/admin`:
 
 Se conserva únicamente el archivo procesado en Storage; guarda los originales en un respaldo familiar separado. Los archivos con URL pública, incluso en borrador, son accesibles si alguien conoce esa URL. No es un sistema para contenido confidencial. `noindex` pide a buscadores no indexar, pero no restringe el acceso.
 
+La portada, las fotos del álbum y las fotos de recuerdos abren un visor de pantalla completa al tocarlas. Muestra la fotografía guardada sin recortes adicionales, con una X de 48 px siempre visible; también se cierra con Escape y restaura el foco sin desplazar la página. El visor usa el archivo optimizado, no una copia original sin comprimir.
+
 ## Peso y consumo
 
 - Fotos del administrador: modal de encuadre con desplazamiento, zoom y vista previa del recorte final. Canvas → WebP, lado mayor inicial de hasta 1600 px y objetivo de 450 KB. El algoritmo prueba calidades de 84, 76 y 68; si hace falta, reduce las dimensiones un 18% y vuelve a codificar desde los píxeles originales. El máximo de seguridad es 2 MB, no el objetivo de almacenamiento. Se puede volver a recortar el archivo almacenado; para recuperar zonas que ya fueron descartadas hay que seleccionar el original. Las fotos del álbum se muestran completas dentro del marco; la portada tiene proporción 4:5 consistente en móvil y escritorio.
