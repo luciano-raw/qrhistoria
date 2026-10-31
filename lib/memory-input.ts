@@ -1,9 +1,12 @@
 import sharp from 'sharp';
 import { z } from 'zod';
 import type { PrismaClient } from '@prisma/client';
+import { adaptiveCompression } from './adaptive-compression.mjs';
 export const MAX_MEMORY_PHOTOS = 3;
 export const MAX_MEMORY_PHOTO_BYTES = 500 * 1024;
-export const MAX_MEMORY_BODY_BYTES = 1800 * 1024;
+export const MAX_MEMORY_UPLOAD_PHOTO_BYTES = 1024 * 1024;
+export const TARGET_MEMORY_PHOTO_BYTES = 200 * 1024;
+export const MAX_MEMORY_BODY_BYTES = 3300 * 1024;
 export class SubmissionError extends Error {
   status: number;
   constructor(message: string, status = 400) { super(message); this.status = status; }
@@ -30,16 +33,24 @@ export async function readLimitedBody(request: Request, limit: number): Promise<
   return new Uint8Array(Buffer.concat(chunks));
 }
 export async function validateMemoryPhoto(file: File): Promise<Buffer> {
-  if (file.size === 0 || file.size > MAX_MEMORY_PHOTO_BYTES || file.type !== 'image/webp') throw new SubmissionError('Prepara las fotografías con el recortador antes de enviarlas (máximo 500 KB cada una).');
+  if (file.size === 0 || file.size > MAX_MEMORY_UPLOAD_PHOTO_BYTES || file.type !== 'image/webp') throw new SubmissionError('No se pudo preparar esta fotografía. Vuelve a abrirla en el recortador para optimizarla automáticamente.');
   try {
     const bytes = Buffer.from(await file.arrayBuffer());
-    const image = sharp(bytes, { limitInputPixels: 1600 * 1600, animated: false });
+    const image = sharp(bytes, { limitInputPixels: 24000000, animated: false });
     const metadata = await image.metadata();
     if (metadata.format !== 'webp' || (metadata.pages ?? 1) > 1) throw new Error('Formato incorrecto');
-    let output = await image.rotate().resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }).webp({ quality: 76 }).toBuffer();
-    if (output.length > MAX_MEMORY_PHOTO_BYTES) output = await sharp(output).webp({ quality: 50 }).toBuffer();
-    if (output.length > MAX_MEMORY_PHOTO_BYTES) throw new Error('Foto demasiado grande');
-    return output;
+    if (!metadata.width || !metadata.height) throw new Error('Dimensiones inválidas');
+    const rotated = (metadata.orientation ?? 1) >= 5;
+    const width = rotated ? metadata.height : metadata.width;
+    const height = rotated ? metadata.width : metadata.height;
+    const optimized = await adaptiveCompression(async (width, height, quality) => {
+      const buffer = await sharp(bytes, { limitInputPixels: 24000000 }).rotate().resize({ width, height, fit: 'inside', withoutEnlargement: true }).webp({ quality: Math.round(quality * 100), effort: 5 }).toBuffer();
+      return { size: buffer.length, buffer };
+    }, { width, height, maxDimension: 1920, targetBytes: TARGET_MEMORY_PHOTO_BYTES, maxBytes: MAX_MEMORY_PHOTO_BYTES });
+    // Full decoding above validates the file. Keep an already-small, metadata-free
+    // WebP when re-encoding would use more bytes or introduce another quality loss.
+    if (Math.max(width, height) <= 1920 && bytes.length <= TARGET_MEMORY_PHOTO_BYTES && bytes.length <= optimized.size && !metadata.exif && !metadata.icc && !metadata.xmp && !metadata.orientation) return bytes;
+    return optimized.buffer;
   } catch { throw new SubmissionError('Una de las fotografías no es válida. Vuelve a prepararla o elige otra imagen.'); }
 }
 export async function parseMemorySubmission(request: Request) {
